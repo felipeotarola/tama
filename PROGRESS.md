@@ -92,3 +92,28 @@
 ### Remaining
 - No blocking issues observed in this Ralph pass.
 - Future polish can add unlockable phrases/outfits once v3 gameplay is validated with real users.
+
+## 2026-05-03 - character-first chat integration
+
+### Review
+- Opened `/public/example/example-app-chatview.png` and compared it against the current chat presentation.
+- The prior chat input was light, but there was no integrated message stream; older messages either disappeared or risked becoming a drawer/panel.
+- The target chat should feel like soft bubbles in Mileahchi's world, with the latest AI response also living in the speech bubble.
+
+### Adjust
+- Added `ChatList`, `ChatBubble`, and `ChatInput` components so chat rendering is separated from the main Tamagotchi component.
+- Rendered only the latest user/assistant turn as floating bubbles below the character, avoiding WhatsApp-style history.
+- Added short bubble truncation and soft fade/slide animation so history stays readable without crowding the character.
+- Kept the full latest assistant reply in the large character speech bubble and prevented chat speech from immediately reverting to mood text.
+- Added a small minimum reply delay so AI responses feel alive rather than instant UI updates.
+
+### Verify
+- `npm run lint` passes.
+- `npm run build` passes.
+- `git diff --check` passes.
+- Playwright mobile smoke test at 375 x 812 showed no horizontal or vertical overflow.
+- Chat bubbles remain below the character, input/actions stay thumb-friendly, and the character remains centered and visible.
+
+### Remaining
+- No blocking chat UX issues observed in this pass.
+- Future polish can add small character-specific typing particles if more delight is needed.

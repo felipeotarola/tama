@@ -7,6 +7,10 @@ type ChatBubbleProps = {
 
 export function ChatBubble({ message, faded = false }: ChatBubbleProps) {
   const isUser = message.role === "user";
+  const displayContent =
+    message.content.length > 64
+      ? `${message.content.slice(0, 61).trim()}...`
+      : message.content;
 
   return (
     <div
@@ -21,7 +25,7 @@ export function ChatBubble({ message, faded = false }: ChatBubbleProps) {
             : "rounded-bl-md border border-white/80 bg-white/82 text-[#563744]"
         }`}
       >
-        {message.content}
+        <span className="companion-chat-content">{displayContent}</span>
       </div>
     </div>
   );

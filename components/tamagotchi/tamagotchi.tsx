@@ -45,7 +45,7 @@ import { getOrCreateGuestId } from "@/lib/tamagotchi/session";
 type SpeechState = {
   id: number;
   text: string;
-  source: "mood" | "action";
+  source: "mood" | "action" | "chat";
 };
 
 const moodLabels: Record<PetState["mood"], string> = {
@@ -120,6 +120,18 @@ export function Tamagotchi() {
           setPet(response.pet);
           setChatMessages(response.messages);
           setSyncNotice(response.notice ?? null);
+          const latestAssistantMessage = getLatestAssistantMessage(
+            response.messages,
+          );
+
+          if (latestAssistantMessage) {
+            speechIdRef.current += 1;
+            setSpeech({
+              id: speechIdRef.current,
+              text: latestAssistantMessage.content,
+              source: "chat",
+            });
+          }
         })
         .catch(() => {
           setSyncNotice("Mileahchi sparar på den här enheten just nu.");
@@ -154,7 +166,7 @@ export function Tamagotchi() {
   }, []);
 
   useEffect(() => {
-    if (speech.source === "action") {
+    if (speech.source !== "mood") {
       return;
     }
 
@@ -272,7 +284,7 @@ export function Tamagotchi() {
     setChatInput("");
     setIsSendingChat(true);
     setChatMessages((current) => [...current, outgoingMessage].slice(-12));
-    showSpeech(THINKING_MESSAGE);
+    showSpeech(THINKING_MESSAGE, "chat");
 
     sendChatMessage({
       guestId: activeGuestId,
@@ -285,7 +297,7 @@ export function Tamagotchi() {
         setPet(response.pet);
         setChatMessages(response.messages);
         setSyncNotice(response.notice ?? null);
-        showSpeech(response.message);
+        showSpeech(response.message, "chat");
         triggerAnimation(response.animation);
       })
       .catch(() => {
@@ -300,7 +312,7 @@ export function Tamagotchi() {
           [...current, fallbackMessage].slice(-12),
         );
         setSyncNotice("Mileahchi tappade molnkontakten en stund.");
-        showSpeech(CHAT_ERROR_MESSAGE);
+        showSpeech(CHAT_ERROR_MESSAGE, "chat");
       })
       .finally(() => {
         setIsSendingChat(false);
@@ -397,4 +409,10 @@ function wait(ms: number) {
   return new Promise((resolve) => {
     window.setTimeout(resolve, ms);
   });
+}
+
+function getLatestAssistantMessage(messages: ChatMessageDTO[]) {
+  return [...messages]
+    .reverse()
+    .find((message) => message.role === "assistant");
 }

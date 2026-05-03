@@ -20,7 +20,7 @@ export function ChatList({ messages, isThinking }: ChatListProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const visibleMessages = messages
     .filter((message) => message.role !== "system")
-    .slice(-5);
+    .slice(-2);
   const stream = isThinking
     ? [...visibleMessages, THINKING_MESSAGE]
     : visibleMessages;
@@ -40,7 +40,7 @@ export function ChatList({ messages, isThinking }: ChatListProps) {
     <div
       ref={scrollRef}
       aria-label="Senaste prat med Mileahchi"
-      className="relative z-20 mt-1 flex max-h-[7.25rem] w-full flex-col gap-1.5 overflow-y-auto px-1 pb-1 pt-2 [mask-image:linear-gradient(to_bottom,transparent_0%,black_15%,black_100%)]"
+      className="relative z-20 mt-1 flex max-h-32 w-full flex-col gap-1.5 overflow-y-auto px-1 pb-1 pt-2"
     >
       {stream.map((message, index) => (
         <ChatBubble
