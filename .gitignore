@@ -12,6 +12,8 @@
 
 # testing
 /coverage
+/.playwright-mcp
+/mileahchi-*.png
 
 # next.js
 /.next/
