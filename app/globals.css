@@ -23,31 +23,6 @@ button {
   touch-action: manipulation;
 }
 
-@keyframes companion-float {
-  0%,
-  100% {
-    transform: translateY(0) rotate(-0.4deg);
-  }
-
-  50% {
-    transform: translateY(-10px) rotate(0.4deg);
-  }
-}
-
-@keyframes reaction-pop {
-  0% {
-    transform: scale(0.97);
-  }
-
-  55% {
-    transform: scale(1.025);
-  }
-
-  100% {
-    transform: scale(1);
-  }
-}
-
 @keyframes companion-bubble-pop {
   0% {
     opacity: 0;
@@ -60,19 +35,23 @@ button {
   }
 }
 
-.companion-float {
-  animation: companion-float 4.8s ease-in-out infinite;
-  transform-origin: center bottom;
-}
+@keyframes companion-glow {
+  0%,
+  100% {
+    opacity: 0.72;
+  }
 
-.reaction-pop {
-  animation:
-    reaction-pop 360ms cubic-bezier(0.2, 0.8, 0.2, 1),
-    companion-float 4.8s ease-in-out 360ms infinite;
+  50% {
+    opacity: 1;
+  }
 }
 
 .companion-bubble-pop {
   animation: companion-bubble-pop 260ms ease-out both;
+}
+
+.companion-glow {
+  animation: companion-glow 3.8s ease-in-out infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {
