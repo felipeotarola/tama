@@ -17,6 +17,10 @@ import {
   initialPetState,
   moodMessages,
   PET_ACTIONS,
+  PET_DECAY_INTERVAL_MS,
+  PET_STATE_STORAGE_KEY,
+  restorePetState,
+  serializePetState,
   type PetActionName,
   type PetState,
 } from "@/lib/tamagotchi/pet-state";
@@ -58,6 +62,7 @@ export function Tamagotchi() {
 
   const speechIdRef = useRef(0);
   const requestIdRef = useRef(0);
+  const hasRestoredPetRef = useRef(false);
 
   useEffect(() => {
     const loadedFrames = ALL_SPRITE_FRAMES.map((src) => {
@@ -74,9 +79,39 @@ export function Tamagotchi() {
   }, []);
 
   useEffect(() => {
+    const timer = window.setTimeout(() => {
+      const restoredPet = restorePetState(
+        window.localStorage.getItem(PET_STATE_STORAGE_KEY),
+      );
+
+      hasRestoredPetRef.current = true;
+
+      if (restoredPet) {
+        setPet(restoredPet);
+        return;
+      }
+
+      window.localStorage.setItem(
+        PET_STATE_STORAGE_KEY,
+        serializePetState(initialPetState),
+      );
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    if (!hasRestoredPetRef.current) {
+      return;
+    }
+
+    window.localStorage.setItem(PET_STATE_STORAGE_KEY, serializePetState(pet));
+  }, [pet]);
+
+  useEffect(() => {
     const interval = window.setInterval(() => {
       setPet((current) => decayPetState(current));
-    }, 6200);
+    }, PET_DECAY_INTERVAL_MS);
 
     return () => window.clearInterval(interval);
   }, []);

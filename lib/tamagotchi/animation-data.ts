@@ -1,6 +1,11 @@
 import type { PetMood } from "./pet-state";
 
-export type SpriteAnimationName = "idle" | "happy" | "playful" | "sleepy";
+export type SpriteAnimationName =
+  | "idle"
+  | "happy"
+  | "playful"
+  | "sleepy"
+  | "hungry";
 
 export type SpriteAnimationDefinition = {
   name: SpriteAnimationName;
@@ -43,6 +48,12 @@ export const SPRITE_ANIMATIONS: Record<
     frameMs: 340,
     frames: frames("sleepy", 4),
   },
+  hungry: {
+    name: "hungry",
+    alt: "Mileahchi är hungrig",
+    frameMs: 260,
+    frames: frames("hungry", 4),
+  },
 };
 
 export const ALL_SPRITE_FRAMES = Object.values(SPRITE_ANIMATIONS).flatMap(
@@ -52,7 +63,7 @@ export const ALL_SPRITE_FRAMES = Object.values(SPRITE_ANIMATIONS).flatMap(
 export const DEFAULT_ANIMATION_BY_MOOD: Record<PetMood, SpriteAnimationName> = {
   idle: "idle",
   happy: "idle",
-  hungry: "idle",
+  hungry: "hungry",
   sleepy: "sleepy",
   playful: "idle",
 };

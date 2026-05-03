@@ -77,35 +77,39 @@ export function useSpriteAnimation({
   }, [defaultAnimation]);
 
   useEffect(() => {
-    const animation = animations[playback.name];
-    const timer = window.setTimeout(() => {
-      const nextFrame = playback.frameIndex + 1;
+    const frameMs = animations[playback.name].frameMs;
+    const interval = window.setInterval(() => {
+      setPlayback((current) => {
+        const animation = animations[current.name];
+        const nextFrame = current.frameIndex + 1;
 
-      if (nextFrame < animation.frames.length) {
-        setPlayback({ ...playback, frameIndex: nextFrame });
-        return;
-      }
-
-      if (playback.mode === "once") {
-        setPlayback({
-          name: defaultAnimation,
-          frameIndex: 0,
-          mode: "loop",
-          requestId: null,
-        });
-
-        if (playback.requestId !== null) {
-          onRequestComplete?.(playback.requestId);
+        if (nextFrame < animation.frames.length) {
+          return { ...current, frameIndex: nextFrame };
         }
 
-        return;
-      }
+        if (current.mode === "once") {
+          if (current.requestId !== null) {
+            const completedRequestId = current.requestId;
+            window.setTimeout(
+              () => onRequestComplete?.(completedRequestId),
+              0,
+            );
+          }
 
-      setPlayback({ ...playback, frameIndex: 0 });
-    }, animation.frameMs);
+          return {
+            name: defaultAnimation,
+            frameIndex: 0,
+            mode: "loop",
+            requestId: null,
+          };
+        }
 
-    return () => window.clearTimeout(timer);
-  }, [animations, defaultAnimation, onRequestComplete, playback]);
+        return { ...current, frameIndex: 0 };
+      });
+    }, frameMs);
+
+    return () => window.clearInterval(interval);
+  }, [animations, defaultAnimation, onRequestComplete, playback.name]);
 
   return useMemo(() => {
     const animation = animations[playback.name];

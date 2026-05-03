@@ -30,6 +30,10 @@ export type PetActionResult = {
   animation: SpriteAnimationName;
 };
 
+export const PET_DECAY_INTERVAL_MS = 12_000;
+export const PET_STATE_STORAGE_KEY = "mileahchi.pet-state.v2";
+const PET_STATE_STORAGE_VERSION = 1;
+
 export const initialPetState: PetState = {
   stats: {
     hunger: 26,
@@ -77,7 +81,7 @@ export const PET_ACTIONS: PetActionDefinition[] = [
 export const moodMessages: Record<PetMood, string> = {
   idle: "Jag sparade ett mjukt litet löv åt dig.",
   happy: "Hjärtat känns alldeles glittrigt nu.",
-  hungry: "Ett mellis snart? Magen småkurrar.",
+  hungry: "Magen kurrar. Finns det ett mellis?",
   sleepy: "Ögonlocken blir till små moln.",
   playful: "Vi leker tills skogen fnissar.",
 };
@@ -143,7 +147,7 @@ export function applyPetAction(
 }
 
 export function decayPetState(pet: PetState): PetState {
-  const hunger = clampStat(pet.stats.hunger + 3);
+  const hunger = clampStat(pet.stats.hunger + 2);
   const energy = clampStat(pet.stats.energy - 2);
   const happinessLoss = hunger > 72 || energy < 30 ? 3 : 1;
 
@@ -152,4 +156,79 @@ export function decayPetState(pet: PetState): PetState {
     energy,
     happiness: pet.stats.happiness - happinessLoss,
   });
+}
+
+export function advancePetState(
+  pet: PetState,
+  steps: number,
+  maxSteps = 48,
+): PetState {
+  const safeSteps = Math.min(Math.max(0, Math.floor(steps)), maxSteps);
+  let nextPet = pet;
+
+  for (let step = 0; step < safeSteps; step += 1) {
+    nextPet = decayPetState(nextPet);
+  }
+
+  return nextPet;
+}
+
+export function serializePetState(pet: PetState, savedAt = Date.now()) {
+  return JSON.stringify({
+    version: PET_STATE_STORAGE_VERSION,
+    savedAt,
+    pet,
+  });
+}
+
+export function restorePetState(
+  rawValue: string | null,
+  now = Date.now(),
+): PetState | null {
+  if (!rawValue) {
+    return null;
+  }
+
+  try {
+    const parsed: unknown = JSON.parse(rawValue);
+
+    if (!isStoredPetState(parsed)) {
+      return null;
+    }
+
+    const restoredPet = normalizePetState(parsed.pet.stats);
+    const elapsedSteps = Math.floor(
+      Math.max(0, now - parsed.savedAt) / PET_DECAY_INTERVAL_MS,
+    );
+
+    return advancePetState(restoredPet, elapsedSteps);
+  } catch {
+    return null;
+  }
+}
+
+function isStoredPetState(value: unknown): value is {
+  version: number;
+  savedAt: number;
+  pet: PetState;
+} {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const candidate = value as {
+    version?: unknown;
+    savedAt?: unknown;
+    pet?: {
+      stats?: Partial<Record<keyof PetStats, unknown>>;
+    };
+  };
+
+  return (
+    candidate.version === PET_STATE_STORAGE_VERSION &&
+    typeof candidate.savedAt === "number" &&
+    typeof candidate.pet?.stats?.hunger === "number" &&
+    typeof candidate.pet.stats.energy === "number" &&
+    typeof candidate.pet.stats.happiness === "number"
+  );
 }
