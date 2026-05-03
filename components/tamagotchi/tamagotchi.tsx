@@ -1,8 +1,20 @@
 "use client";
 
 import Image from "next/image";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  type FormEvent,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 
+import { ActionDock } from "@/components/tamagotchi/action-dock";
+import { ChatDock } from "@/components/tamagotchi/chat-dock";
+import { ChatList } from "@/components/tamagotchi/chat-list";
+import { LevelBar } from "@/components/tamagotchi/level-bar";
+import { SpeechBubble } from "@/components/tamagotchi/speech-bubble";
+import { StatsPanel } from "@/components/tamagotchi/stats-panel";
 import { useSpriteAnimation } from "@/hooks/use-sprite-animation";
 import {
   ALL_SPRITE_FRAMES,
@@ -11,12 +23,16 @@ import {
   type SpriteAnimationName,
 } from "@/lib/tamagotchi/animation-data";
 import {
+  loadPetProfile,
+  savePetAction,
+  sendChatMessage,
+} from "@/lib/tamagotchi/api-client";
+import type { ChatMessageDTO } from "@/lib/tamagotchi/api-types";
+import {
   applyPetAction,
   decayPetState,
-  getFullness,
   initialPetState,
   moodMessages,
-  PET_ACTIONS,
   PET_DECAY_INTERVAL_MS,
   PET_STATE_STORAGE_KEY,
   restorePetState,
@@ -24,19 +40,12 @@ import {
   type PetActionName,
   type PetState,
 } from "@/lib/tamagotchi/pet-state";
+import { getOrCreateGuestId } from "@/lib/tamagotchi/session";
 
 type SpeechState = {
   id: number;
   text: string;
   source: "mood" | "action";
-};
-
-const actionButtonStyles: Record<PetActionName, string> = {
-  feed: "border-rose-100 bg-rose-50 text-rose-700 shadow-rose-200/60 hover:bg-rose-100",
-  play: "border-violet-100 bg-violet-50 text-violet-700 shadow-violet-200/60 hover:bg-violet-100",
-  sleep:
-    "border-indigo-100 bg-indigo-50 text-indigo-700 shadow-indigo-200/60 hover:bg-indigo-100",
-  hug: "border-amber-100 bg-amber-50 text-amber-800 shadow-amber-200/60 hover:bg-amber-100",
 };
 
 const moodLabels: Record<PetState["mood"], string> = {
@@ -46,6 +55,9 @@ const moodLabels: Record<PetState["mood"], string> = {
   sleepy: "Sömnig",
   playful: "Busig",
 };
+
+const THINKING_MESSAGE = "Mileahchi tänker...";
+const CHAT_ERROR_MESSAGE = "Hmm... jag blev lite sömnig. Kan du säga det igen?";
 
 export function Tamagotchi() {
   const [pet, setPet] = useState<PetState>(initialPetState);
@@ -59,6 +71,12 @@ export function Tamagotchi() {
     name: SpriteAnimationName;
     mode: "once";
   } | null>(null);
+  const [guestId, setGuestId] = useState<string | null>(null);
+  const [chatInput, setChatInput] = useState("");
+  const [chatMessages, setChatMessages] = useState<ChatMessageDTO[]>([]);
+  const [isSendingChat, setIsSendingChat] = useState(false);
+  const [syncNotice, setSyncNotice] = useState<string | null>(null);
+  const [now, setNow] = useState(() => Date.now());
 
   const speechIdRef = useRef(0);
   const requestIdRef = useRef(0);
@@ -83,18 +101,29 @@ export function Tamagotchi() {
       const restoredPet = restorePetState(
         window.localStorage.getItem(PET_STATE_STORAGE_KEY),
       );
+      const nextPet = restoredPet ?? initialPetState;
+      const nextGuestId = getOrCreateGuestId();
 
       hasRestoredPetRef.current = true;
+      setGuestId(nextGuestId);
+      setPet(nextPet);
 
-      if (restoredPet) {
-        setPet(restoredPet);
-        return;
+      if (!restoredPet) {
+        window.localStorage.setItem(
+          PET_STATE_STORAGE_KEY,
+          serializePetState(nextPet),
+        );
       }
 
-      window.localStorage.setItem(
-        PET_STATE_STORAGE_KEY,
-        serializePetState(initialPetState),
-      );
+      loadPetProfile({ guestId: nextGuestId, clientPet: nextPet })
+        .then((response) => {
+          setPet(response.pet);
+          setChatMessages(response.messages);
+          setSyncNotice(response.notice ?? null);
+        })
+        .catch(() => {
+          setSyncNotice("Mileahchi sparar på den här enheten just nu.");
+        });
     }, 0);
 
     return () => window.clearTimeout(timer);
@@ -112,6 +141,14 @@ export function Tamagotchi() {
     const interval = window.setInterval(() => {
       setPet((current) => decayPetState(current));
     }, PET_DECAY_INTERVAL_MS);
+
+    return () => window.clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      setNow(Date.now());
+    }, 1000);
 
     return () => window.clearInterval(interval);
   }, []);
@@ -148,6 +185,27 @@ export function Tamagotchi() {
 
   const defaultAnimation = DEFAULT_ANIMATION_BY_MOOD[pet.mood];
 
+  const triggerAnimation = useCallback((name: SpriteAnimationName) => {
+    requestIdRef.current += 1;
+    setAnimationRequest({
+      id: requestIdRef.current,
+      name,
+      mode: "once",
+    });
+  }, []);
+
+  const showSpeech = useCallback(
+    (text: string, source: SpeechState["source"] = "action") => {
+      speechIdRef.current += 1;
+      setSpeech({
+        id: speechIdRef.current,
+        text,
+        source,
+      });
+    },
+    [],
+  );
+
   const handleAnimationComplete = useCallback((requestId: number) => {
     setAnimationRequest((current) =>
       current?.id === requestId ? null : current,
@@ -161,116 +219,148 @@ export function Tamagotchi() {
     onRequestComplete: handleAnimationComplete,
   });
 
-  const statPills = useMemo(
-    () => [
-      {
-        label: "Glad",
-        emoji: "❤️",
-        value: pet.stats.happiness,
-        barClassName: "bg-gradient-to-r from-rose-300 to-pink-400",
-      },
-      {
-        label: "Energi",
-        emoji: "⚡",
-        value: pet.stats.energy,
-        barClassName: "bg-gradient-to-r from-amber-300 to-orange-400",
-      },
-      {
-        label: "Mätt",
-        emoji: "🍎",
-        value: getFullness(pet.stats),
-        barClassName: "bg-gradient-to-r from-emerald-300 to-teal-400",
-      },
-    ],
-    [pet.stats],
-  );
-
   const handleAction = (actionName: PetActionName) => {
-    const result = applyPetAction(pet, actionName);
+    const actionTime = Date.now();
+    const result = applyPetAction(pet, actionName, actionTime);
 
     setPet(result.pet);
+    setNow(actionTime);
+    triggerAnimation(result.animation);
+    showSpeech(result.message);
 
-    requestIdRef.current += 1;
-    setAnimationRequest({
-      id: requestIdRef.current,
-      name: result.animation,
-      mode: "once",
-    });
+    if (!guestId) {
+      setSyncNotice("Mileahchi sparar på den här enheten just nu.");
+      return;
+    }
 
-    speechIdRef.current += 1;
-    setSpeech({
-      id: speechIdRef.current,
-      text: result.message,
-      source: "action",
-    });
+    savePetAction({
+      guestId,
+      action: actionName,
+      clientPet: pet,
+    })
+      .then((response) => {
+        setPet(response.pet);
+        setSyncNotice(response.notice ?? null);
+      })
+      .catch(() => {
+        setSyncNotice("Mileahchi sparar lokalt tills molnet vaknar igen.");
+      });
+  };
+
+  const handleChatSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    const message = chatInput.trim();
+
+    if (!message || isSendingChat) {
+      return;
+    }
+
+    const activeGuestId = guestId ?? getOrCreateGuestId();
+    const startedAt = Date.now();
+    const outgoingMessage: ChatMessageDTO = {
+      id: `local-user-${startedAt}`,
+      role: "user",
+      content: message,
+      createdAt: new Date().toISOString(),
+    };
+
+    if (!guestId) {
+      setGuestId(activeGuestId);
+    }
+
+    setChatInput("");
+    setIsSendingChat(true);
+    setChatMessages((current) => [...current, outgoingMessage].slice(-12));
+    showSpeech(THINKING_MESSAGE);
+
+    sendChatMessage({
+      guestId: activeGuestId,
+      message,
+      clientPet: pet,
+      clientMessages: chatMessages.slice(-10),
+    })
+      .then(async (response) => {
+        await wait(Math.max(0, 650 - (Date.now() - startedAt)));
+        setPet(response.pet);
+        setChatMessages(response.messages);
+        setSyncNotice(response.notice ?? null);
+        showSpeech(response.message);
+        triggerAnimation(response.animation);
+      })
+      .catch(() => {
+        const fallbackMessage: ChatMessageDTO = {
+          id: `local-assistant-${Date.now()}`,
+          role: "assistant",
+          content: CHAT_ERROR_MESSAGE,
+          createdAt: new Date().toISOString(),
+        };
+
+        setChatMessages((current) =>
+          [...current, fallbackMessage].slice(-12),
+        );
+        setSyncNotice("Mileahchi tappade molnkontakten en stund.");
+        showSpeech(CHAT_ERROR_MESSAGE);
+      })
+      .finally(() => {
+        setIsSendingChat(false);
+      });
   };
 
   return (
-    <main className="min-h-dvh overflow-x-hidden bg-[radial-gradient(circle_at_50%_0%,#fffaf0_0%,#ffe9ef_42%,#eadfff_100%)] px-4 pb-[calc(env(safe-area-inset-bottom)+0.65rem)] pt-[calc(env(safe-area-inset-top)+0.65rem)] text-[#563744] sm:grid sm:place-items-center">
-      <section className="relative mx-auto flex min-h-[calc(100dvh-1.3rem)] w-full max-w-md flex-col overflow-hidden rounded-[2rem] border border-white/70 bg-white/55 p-3.5 shadow-[0_24px_70px_rgba(143,89,122,0.24)] backdrop-blur-xl sm:min-h-[760px] sm:p-5">
+    <main className="relative flex h-dvh items-stretch justify-center overflow-hidden bg-[radial-gradient(circle_at_50%_8%,#fff8d9_0%,#ffdce8_38%,#dbc9ff_100%)] px-[clamp(0.55rem,3vw,1rem)] pb-[calc(env(safe-area-inset-bottom)+0.5rem)] pt-[calc(env(safe-area-inset-top)+0.5rem)] text-[#563744] sm:items-center">
+      <div
+        aria-hidden="true"
+        className="absolute inset-0 bg-[radial-gradient(circle_at_22%_72%,rgba(116,185,130,0.34),transparent_22%),radial-gradient(circle_at_86%_70%,rgba(93,165,124,0.28),transparent_21%),radial-gradient(circle_at_50%_46%,rgba(255,245,170,0.5),transparent_30%)]"
+      />
+      <div
+        aria-hidden="true"
+        className="absolute -left-12 bottom-20 h-28 w-28 rounded-full bg-[radial-gradient(circle_at_45%_40%,#fff7f9_0_22%,#ff8aa4_23%_45%,#f56d8e_46%_100%)] opacity-70 blur-[0.2px]"
+      />
+      <div
+        aria-hidden="true"
+        className="absolute -right-10 bottom-32 h-24 w-32 rounded-[2rem] bg-amber-200/35 blur-sm"
+      />
+
+      <section className="relative mx-auto grid h-full min-h-0 w-full max-w-md grid-rows-[auto_auto_minmax(0,1fr)_auto_auto_auto] gap-[clamp(0.45rem,1.4dvh,0.65rem)] overflow-hidden px-[clamp(0.25rem,1vw,0.5rem)] sm:max-h-[820px]">
         <div
           aria-hidden="true"
-          className="companion-glow pointer-events-none absolute inset-x-8 top-24 h-44 rounded-full bg-[radial-gradient(circle,rgba(255,255,255,0.9),rgba(255,214,232,0.45)_46%,rgba(255,255,255,0)_72%)] blur-2xl"
+          className="companion-glow pointer-events-none absolute inset-x-8 top-36 h-56 rounded-full bg-[radial-gradient(circle,rgba(255,255,210,0.72),rgba(255,209,229,0.4)_46%,rgba(255,255,255,0)_72%)] blur-2xl"
         />
 
-        <header className="relative z-10 flex items-start justify-between gap-3">
-          <div>
-            <p className="text-2xl font-black leading-none text-[#4a2d3b]">
+        <header className="relative z-10 grid grid-cols-[3rem_minmax(0,1fr)_4.75rem] items-start gap-2 pt-2">
+          <button
+            type="button"
+            aria-label="Meny"
+            className="grid h-12 w-12 place-items-center rounded-full border border-white/70 bg-white/68 text-2xl font-black text-[#65445d] shadow-[0_10px_24px_rgba(122,80,112,0.14)] backdrop-blur active:scale-95"
+          >
+            ≡
+          </button>
+          <div className="min-w-0 text-center">
+            <p className="truncate text-[clamp(1.8rem,9vw,2.45rem)] font-black leading-none text-[#55355f] drop-shadow-[0_2px_0_rgba(255,255,255,0.55)]">
               Mileahchi
             </p>
-            <p className="mt-1 text-sm font-medium text-[#8f6575]">
+            <p className="mt-1 truncate text-[clamp(0.95rem,4.5vw,1.2rem)] font-black text-[#a7798f]">
               Din lilla skogsvän
             </p>
           </div>
-          <div className="rounded-full border border-white/70 bg-white/65 px-3 py-1.5 text-xs font-bold text-rose-500 shadow-sm">
+          <div className="shrink-0 rounded-full border border-white/75 bg-white/75 px-2.5 py-2 text-[11px] font-black text-rose-500 shadow-[0_10px_24px_rgba(122,80,112,0.14)] backdrop-blur">
+            <span aria-hidden="true">✦ </span>
             {moodLabels[pet.mood]}
           </div>
         </header>
 
-        <div
-          aria-label="Mileahchis status"
-          className="relative z-10 mt-3 grid grid-cols-3 gap-2"
-        >
-          {statPills.map((stat) => (
-            <div
-              key={stat.label}
-              className="min-w-0 rounded-2xl border border-white/70 bg-white/65 p-2 shadow-sm"
-            >
-              <div className="flex items-center justify-between gap-1 text-[10px] font-black text-[#6b4957]">
-                <span className="min-w-0 truncate">
-                  <span aria-hidden="true">{stat.emoji}</span> {stat.label}
-                </span>
-                <span>{stat.value}</span>
-              </div>
-              <div className="mt-2 h-2 overflow-hidden rounded-full bg-[#f5e7e4]">
-                <div
-                  className={`h-full rounded-full transition-all duration-500 ease-out ${stat.barClassName}`}
-                  style={{ width: `${stat.value}%` }}
-                />
-              </div>
-            </div>
-          ))}
-        </div>
+        <StatsPanel pet={pet} />
 
-        <section className="relative z-10 flex flex-1 flex-col items-center justify-center py-2">
-          <div
-            key={speech.id}
-            aria-live="polite"
-            className="companion-bubble-pop relative min-h-[56px] w-full max-w-[17.5rem] rounded-2xl border border-white/80 bg-white/80 px-4 py-3 text-center text-sm font-bold leading-snug text-[#624454] shadow-[0_12px_28px_rgba(130,83,109,0.14)]"
-          >
-            {speech.text}
-            <span
-              aria-hidden="true"
-              className="absolute -bottom-2 left-1/2 h-4 w-4 -translate-x-1/2 rotate-45 border-b border-r border-white/80 bg-white/80"
-            />
-          </div>
+        <section className="relative z-10 flex min-h-0 flex-col items-center justify-center">
+          <SpeechBubble id={speech.id} text={speech.text} />
 
-          <div className="relative mt-2 flex w-full flex-1 items-center justify-center overflow-visible">
+          <div className="relative mt-1 flex min-h-0 w-full flex-1 items-center justify-center overflow-visible">
             <div
               aria-hidden="true"
-              className="companion-glow absolute h-64 w-64 rounded-full bg-[radial-gradient(circle,rgba(255,255,255,0.96)_0%,rgba(255,198,221,0.62)_42%,rgba(196,171,255,0.22)_68%,rgba(255,255,255,0)_76%)] blur-xl"
+              className="companion-glow absolute h-[min(78vw,20rem)] w-[min(78vw,20rem)] rounded-full bg-[radial-gradient(circle,rgba(255,247,173,0.62)_0%,rgba(255,204,226,0.45)_44%,rgba(196,171,255,0.18)_70%,rgba(255,255,255,0)_76%)] blur-xl"
             />
-            <div className="relative z-10 h-[clamp(390px,112vw,452px)] w-[clamp(270px,82vw,320px)]">
+            <div className="companion-float relative z-10 h-full max-h-[390px] min-h-[230px] w-[min(86vw,340px)]">
               <Image
                 priority
                 unoptimized
@@ -283,24 +373,28 @@ export function Tamagotchi() {
               />
             </div>
           </div>
+
+          <ChatList messages={chatMessages} isThinking={isSendingChat} />
         </section>
 
-        <div className="relative z-10 mt-auto grid grid-cols-2 gap-2">
-          {PET_ACTIONS.map((action) => (
-            <button
-              key={action.name}
-              type="button"
-              onClick={() => handleAction(action.name)}
-              className={`flex min-h-[60px] items-center justify-center gap-2 rounded-2xl border px-4 text-base font-black shadow-lg transition duration-150 ease-out active:scale-95 ${actionButtonStyles[action.name]}`}
-            >
-              <span className="text-xl" aria-hidden="true">
-                {action.emoji}
-              </span>
-              <span>{action.label}</span>
-            </button>
-          ))}
-        </div>
+        <LevelBar pet={pet} />
+
+        <ChatDock
+          input={chatInput}
+          notice={syncNotice}
+          isSending={isSendingChat}
+          onInputChange={setChatInput}
+          onSubmit={handleChatSubmit}
+        />
+
+        <ActionDock pet={pet} now={now} onAction={handleAction} />
       </section>
     </main>
   );
+}
+
+function wait(ms: number) {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, ms);
+  });
 }

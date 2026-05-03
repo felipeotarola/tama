@@ -46,12 +46,43 @@ button {
   }
 }
 
+@keyframes companion-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+
+  50% {
+    transform: translateY(-5px);
+  }
+}
+
+@keyframes companion-chat-bubble {
+  0% {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
 .companion-bubble-pop {
   animation: companion-bubble-pop 260ms ease-out both;
 }
 
 .companion-glow {
   animation: companion-glow 3.8s ease-in-out infinite;
+}
+
+.companion-float {
+  animation: companion-float 4.6s ease-in-out infinite;
+}
+
+.companion-chat-bubble {
+  animation: companion-chat-bubble 220ms ease-out both;
 }
 
 @media (prefers-reduced-motion: reduce) {
