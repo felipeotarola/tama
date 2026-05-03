@@ -1,4 +1,5 @@
 import type { SpriteAnimationName } from "./animation-data";
+import type { PetOutfit } from "@/lib/pet/pet-scenes";
 import type { PetActionName, PetState } from "./pet-state";
 
 export type StorageMode = "supabase" | "local";
@@ -27,6 +28,7 @@ export type PetLoadResponse = {
 export type PetActionRequest = {
   guestId: string;
   action: PetActionName;
+  outfit?: PetOutfit;
   clientPet: PetState;
 };
 

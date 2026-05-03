@@ -117,3 +117,77 @@
 ### Remaining
 - No blocking chat UX issues observed in this pass.
 - Future polish can add small character-specific typing particles if more delight is needed.
+
+## 2026-05-03 - v4 pet-life scenes and routines
+
+### Review
+- Re-opened `/public/example/example-app.png` and inspected the live `tama-mocha.vercel.app` mobile viewport at 375 x 812.
+- The existing shell already had the right soft toy direction, but the pet still lived in one generic stage: eating, sleeping, school, and dressing were not represented as real routines.
+- Game state also needed first-class scene, outfit, and timed activity data so chat and persistence could understand what Mileahchi is doing.
+
+### Plan
+- Add one coherent v4 foundation: generated scene art, timed routines, outfit changes, Supabase-backed scene state, and scene-aware chat prompt updates.
+- Preserve the existing mobile layout, stats, level bar, chat dock, and circular action dock.
+
+### Adjust
+- Generated GPT-Image-2 scene assets and saved them under `public/character/scene/`: `bedroom.png`, `dining.png`, `school.png`, `wardrobe.png`, plus activity composites `sleeping.png` and `eating.png`.
+- Generated GPT-Image-2 outfit sprites and saved alpha PNGs under `public/character/outfits/`: `pajamas.png`, `day.png`, and `school.png`.
+- Added `lib/pet/pet-scenes.ts` and `lib/pet/pet-actions.ts` for scene/outfit metadata and activity progress formatting.
+- Extended `PetState` with `scene`, `outfit`, `activity`, and `lastDecayAt`.
+- Rebalanced actions into v4 routines: `Ät`, `Sov`, `Skola`, and `Kläder`.
+- Added timed activity logic: eating restores fullness gradually, sleep restores energy gradually, school consumes some needs while giving XP, and outfit changes complete after a short dressing animation.
+- Disabled actions while Mileahchi is busy and added friendly progress bars plus cooldown labels.
+- Added completion feedback for timed routines so school, sleep, eating, and changing end with a clear speech-bubble response.
+- Added `SceneRenderer`, `SceneControls`, and `Wardrobe` components to keep UI responsibilities separated.
+- Updated the OpenAI system prompt so Mileahchi knows the current scene, outfit, and activity, including sleepy/school/eating behavior.
+- Added Supabase v4 migration for `current_scene`, `current_outfit`, `activity`, and `last_decay_at`, plus event support for `school` and `wardrobe`.
+- Made Supabase storage backward-compatible: if the migration has not been applied yet, v4 scene/outfit/activity state still persists through the existing `pet_memories` game_state row.
+
+### GPT-Image-2 Prompts Used
+- Four-panel pastel scene sheet: cozy bedroom, dining nook, outdoor school, and wardrobe nook, no characters/UI/text.
+- Three-panel chroma-key outfit sheet matching Mileahchi: pajamas, day clothes, and school clothes.
+- Two-panel activity scene sheet: Mileahchi tucked into bed sleeping and Mileahchi seated at a table eating apple slices.
+
+### Verify
+- `npm run lint` passes.
+- `npm run build` passes.
+- `git diff --check` passes.
+- Playwright mobile smoke tests at 375 x 812 showed no horizontal or vertical overflow.
+- Touch targets remained thumb-friendly: bottom routine buttons measured about 79 x 79px; chat send measured 46 x 46px.
+- Eating scene shows Mileahchi seated at a table, gradually changing fullness, with actions locked and a progress bar.
+- Sleep scene shows Mileahchi tucked in bed with actions locked and a progress bar.
+- School scene shows a school environment, XP reward, long friendly cooldown (`8h`), and locked actions while away.
+- Wardrobe scene opens outfit choices, locks school clothes until level 2, changes outfit through a timed activity, and restores the selected outfit after reload.
+- Supabase-backed reload restored outfit XP/cooldown state during smoke testing; legacy DB compatibility avoided local fallback before the v4 migration is applied.
+
+### Remaining
+- No blocking v4 foundation issues observed in this pass.
+- Future polish can add frame-based animation variants for day/school outfits and a dedicated school-return micro-animation.
+
+## 2026-05-03 - immersive full-screen scene rendering
+
+### Review
+- Rechecked the current mobile layout against the new goal: the generated scene art still lived inside a rounded rectangle, so Mileahchi felt placed in a UI card instead of inside the room.
+- Home, sleep, eating, wardrobe, and school states had good art assets, but the scene boundary was visually obvious.
+
+### Adjust
+- Moved scene imagery out of `SceneRenderer` and onto the root viewport background.
+- Added `SceneBackdrop` as a reusable full-screen background layer with soft crossfades between environments.
+- Added `getPetScenePresentation` so each scene/activity owns its full-screen background, background position, composite-art behavior, and character placement defaults.
+- Removed the rounded scene card, border, inset scene image, and card shadow from the character stage.
+- Kept UI as floating overlays: header, stats, speech, progress, XP, chat input, and action dock remain readable above the environment.
+- Added full-screen top/bottom readability gradients and subtle radial tinting instead of inner card framing.
+- Let composite activity scenes (`eating`, `sleeping`) fill the viewport directly, hiding the duplicate standing sprite so Mileahchi appears naturally seated or tucked in.
+
+### Verify
+- `npm run lint` passes.
+- `npm run build` passes.
+- `git diff --check` passes.
+- Playwright mobile review at 375 x 812 showed no horizontal or vertical overflow.
+- Home view now fills the whole viewport with room art and no visible scene card.
+- Eating and sleeping views fill the screen with composite activity art while UI remains readable and touch targets remain about 79 x 79px.
+- School and wardrobe states no longer render inside a boxed scene.
+
+### Remaining
+- No blocking immersion issues observed in this pass.
+- The local Next.js dev-tools button appears in development screenshots only and is not part of the app UI.

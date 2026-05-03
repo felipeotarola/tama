@@ -2,6 +2,7 @@ import { supabaseRest } from "@/lib/supabase/server";
 
 import type { ChatMessageDTO } from "./api-types";
 import {
+  advancePetActivity,
   advancePetState,
   initialPetState,
   normalizePetState,
@@ -20,6 +21,10 @@ type PetProfileRow = {
   energy: number;
   happiness: number;
   mood: string;
+  current_scene?: PetState["scene"];
+  current_outfit?: PetState["outfit"];
+  activity?: PetState["activity"];
+  last_decay_at?: string;
   last_interaction_at: string;
   created_at: string;
   updated_at: string;
@@ -37,7 +42,10 @@ type PetMemoryRow = {
   content: string;
 };
 
-type PersistedGameState = Pick<PetState, "progress" | "actionMemory">;
+type PersistedGameState = Pick<
+  PetState,
+  "progress" | "actionMemory" | "scene" | "outfit" | "activity" | "lastDecayAt"
+>;
 
 export type LoadedPetProfile = {
   id: string;
@@ -45,6 +53,8 @@ export type LoadedPetProfile = {
 };
 
 const PET_PROFILE_SELECT =
+  "id,user_id,guest_id,name,hunger,energy,happiness,mood,current_scene,current_outfit,activity,last_decay_at,last_interaction_at,created_at,updated_at";
+const LEGACY_PET_PROFILE_SELECT =
   "id,user_id,guest_id,name,hunger,energy,happiness,mood,last_interaction_at,created_at,updated_at";
 
 export async function loadOrCreateGuestPet(
@@ -53,11 +63,7 @@ export async function loadOrCreateGuestPet(
 ): Promise<LoadedPetProfile> {
   assertGuestId(guestId);
 
-  const rows = await supabaseRest<PetProfileRow[]>(
-    `pet_profiles?select=${PET_PROFILE_SELECT}&guest_id=eq.${encodeURIComponent(
-      guestId,
-    )}&order=created_at.asc&limit=1`,
-  );
+  const rows = await loadGuestPetRows(guestId);
   const existingPet = rows[0];
 
   if (existingPet) {
@@ -67,23 +73,27 @@ export async function loadOrCreateGuestPet(
     return { id: existingPet.id, pet };
   }
 
-  const insertedRows = await supabaseRest<PetProfileRow[]>("pet_profiles", {
-    method: "POST",
-    prefer: "return=representation",
-    body: JSON.stringify({
-      guest_id: guestId,
-      name: "Mileahchi",
-      hunger: fallbackPet.stats.hunger,
-      energy: fallbackPet.stats.energy,
-      happiness: fallbackPet.stats.happiness,
-      mood: fallbackPet.mood,
-      last_interaction_at: new Date().toISOString(),
-    }),
+  const insertedRows = await insertGuestPet({
+    guest_id: guestId,
+    name: "Mileahchi",
+    hunger: fallbackPet.stats.hunger,
+    energy: fallbackPet.stats.energy,
+    happiness: fallbackPet.stats.happiness,
+    mood: fallbackPet.mood,
+    current_scene: fallbackPet.scene,
+    current_outfit: fallbackPet.outfit,
+    activity: fallbackPet.activity,
+    last_decay_at: new Date(fallbackPet.lastDecayAt).toISOString(),
+    last_interaction_at: new Date().toISOString(),
   });
   const insertedPet = insertedRows[0];
   const pet = rowToPetState(insertedPet, fallbackPet, {
     progress: fallbackPet.progress,
     actionMemory: fallbackPet.actionMemory,
+    scene: fallbackPet.scene,
+    outfit: fallbackPet.outfit,
+    activity: fallbackPet.activity,
+    lastDecayAt: fallbackPet.lastDecayAt,
   });
 
   await savePetGameState(insertedPet.id, pet).catch((error) => {
@@ -97,20 +107,17 @@ export async function loadOrCreateGuestPet(
 }
 
 export async function updateGuestPet(petId: string, pet: PetState) {
-  await supabaseRest<PetProfileRow[]>(
-    `pet_profiles?id=eq.${encodeURIComponent(petId)}`,
-    {
-      method: "PATCH",
-      prefer: "return=representation",
-      body: JSON.stringify({
-        hunger: pet.stats.hunger,
-        energy: pet.stats.energy,
-        happiness: pet.stats.happiness,
-        mood: pet.mood,
-        last_interaction_at: new Date().toISOString(),
-      }),
-    },
-  );
+  await patchGuestPet(petId, {
+    hunger: pet.stats.hunger,
+    energy: pet.stats.energy,
+    happiness: pet.stats.happiness,
+    mood: pet.mood,
+    current_scene: pet.scene,
+    current_outfit: pet.outfit,
+    activity: pet.activity,
+    last_decay_at: new Date(pet.lastDecayAt).toISOString(),
+    last_interaction_at: new Date().toISOString(),
+  });
 
   await savePetGameState(petId, pet).catch((error) => {
     console.error("Failed to save Mileahchi game memory.", error);
@@ -175,6 +182,71 @@ function assertGuestId(guestId: string) {
   }
 }
 
+async function loadGuestPetRows(guestId: string) {
+  const encodedGuestId = encodeURIComponent(guestId);
+  const suffix = `&guest_id=eq.${encodedGuestId}&order=created_at.asc&limit=1`;
+
+  try {
+    return await supabaseRest<PetProfileRow[]>(
+      `pet_profiles?select=${PET_PROFILE_SELECT}${suffix}`,
+    );
+  } catch (error) {
+    console.warn("Falling back to legacy Mileahchi pet profile select.", error);
+    return supabaseRest<PetProfileRow[]>(
+      `pet_profiles?select=${LEGACY_PET_PROFILE_SELECT}${suffix}`,
+    );
+  }
+}
+
+async function insertGuestPet(body: Record<string, unknown>) {
+  try {
+    return await supabaseRest<PetProfileRow[]>("pet_profiles", {
+      method: "POST",
+      prefer: "return=representation",
+      body: JSON.stringify(body),
+    });
+  } catch (error) {
+    console.warn("Falling back to legacy Mileahchi pet profile insert.", error);
+    return supabaseRest<PetProfileRow[]>("pet_profiles", {
+      method: "POST",
+      prefer: "return=representation",
+      body: JSON.stringify(toLegacyPetProfileBody(body)),
+    });
+  }
+}
+
+async function patchGuestPet(petId: string, body: Record<string, unknown>) {
+  const path = `pet_profiles?id=eq.${encodeURIComponent(petId)}`;
+
+  try {
+    await supabaseRest<PetProfileRow[]>(path, {
+      method: "PATCH",
+      prefer: "return=representation",
+      body: JSON.stringify(body),
+    });
+    return;
+  } catch (error) {
+    console.warn("Falling back to legacy Mileahchi pet profile update.", error);
+  }
+
+  await supabaseRest<PetProfileRow[]>(path, {
+    method: "PATCH",
+    prefer: "return=representation",
+    body: JSON.stringify(toLegacyPetProfileBody(body)),
+  });
+}
+
+function toLegacyPetProfileBody(body: Record<string, unknown>) {
+  const legacyBody = { ...body };
+
+  delete legacyBody.current_scene;
+  delete legacyBody.current_outfit;
+  delete legacyBody.activity;
+  delete legacyBody.last_decay_at;
+
+  return legacyBody;
+}
+
 async function loadPetGameState(petId: string) {
   const rows = await supabaseRest<PetMemoryRow[]>(
     `pet_memories?select=id,content&pet_id=eq.${encodeURIComponent(
@@ -198,6 +270,10 @@ async function savePetGameState(petId: string, pet: PetState) {
   const content = JSON.stringify({
     progress: pet.progress,
     actionMemory: pet.actionMemory,
+    scene: pet.scene,
+    outfit: pet.outfit,
+    activity: pet.activity,
+    lastDecayAt: pet.lastDecayAt,
   } satisfies PersistedGameState);
   const existingRows = await supabaseRest<PetMemoryRow[]>(
     `pet_memories?select=id,content&pet_id=eq.${encodeURIComponent(
@@ -238,6 +314,15 @@ function rowToPetState(
     },
     gameState?.progress ?? fallbackPet.progress,
     gameState?.actionMemory ?? fallbackPet.actionMemory,
+    {
+      scene: gameState?.scene ?? row.current_scene ?? fallbackPet.scene,
+      outfit: gameState?.outfit ?? row.current_outfit ?? fallbackPet.outfit,
+      activity: gameState?.activity ?? row.activity ?? fallbackPet.activity,
+      lastDecayAt:
+        gameState?.lastDecayAt ??
+        (row.last_decay_at ? new Date(row.last_decay_at).getTime() : undefined) ??
+        fallbackPet.lastDecayAt,
+    },
   );
 }
 
@@ -247,12 +332,17 @@ function applyElapsedDecay(
   gameState: PersistedGameState | null,
 ) {
   const restoredPet = rowToPetState(row, fallbackPet, gameState);
+  const now = Date.now();
+  const activityAwarePet = advancePetActivity(restoredPet, now);
   const savedAt = new Date(row.last_interaction_at).getTime();
+  const decayStart = restoredPet.activity
+    ? Math.max(savedAt, restoredPet.activity.endsAt)
+    : savedAt;
   const elapsedSteps = Number.isFinite(savedAt)
-    ? Math.floor(Math.max(0, Date.now() - savedAt) / PET_DECAY_INTERVAL_MS)
+    ? Math.floor(Math.max(0, now - decayStart) / PET_DECAY_INTERVAL_MS)
     : 0;
 
-  return advancePetState(restoredPet, elapsedSteps);
+  return advancePetState(activityAwarePet, elapsedSteps);
 }
 
 function rowToChatMessage(row: ChatMessageRow): ChatMessageDTO {

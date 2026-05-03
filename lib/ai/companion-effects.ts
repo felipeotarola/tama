@@ -29,6 +29,34 @@ const HUNGRY_WORDS = ["hungrig", "mat", "mellis", "äta", "hungry", "food"];
 export function applyChatEffect(pet: PetState, userMessage: string): ChatEffect {
   const message = userMessage.toLowerCase();
 
+  if (pet.activity?.name === "sleeping") {
+    return {
+      pet,
+      animation: "sleepy",
+    };
+  }
+
+  if (pet.activity?.name === "eating") {
+    return {
+      pet: withChatXp(pet),
+      animation: "happy",
+    };
+  }
+
+  if (pet.activity?.name === "school") {
+    return {
+      pet: withChatXp(pet),
+      animation: "playful",
+    };
+  }
+
+  if (pet.activity?.name === "changing") {
+    return {
+      pet: withChatXp(pet),
+      animation: "happy",
+    };
+  }
+
   if (containsAny(message, SLEEP_WORDS)) {
     return {
       pet: withChatXp(
@@ -40,6 +68,7 @@ export function applyChatEffect(pet: PetState, userMessage: string): ChatEffect 
           },
           pet.progress,
           pet.actionMemory,
+          pet,
         ),
       ),
       animation: "sleepy",
@@ -57,6 +86,7 @@ export function applyChatEffect(pet: PetState, userMessage: string): ChatEffect 
           },
           pet.progress,
           pet.actionMemory,
+          pet,
         ),
       ),
       animation: "playful",
@@ -81,6 +111,7 @@ export function applyChatEffect(pet: PetState, userMessage: string): ChatEffect 
           },
           pet.progress,
           pet.actionMemory,
+          pet,
         ),
       ),
       animation: "happy",
@@ -97,6 +128,7 @@ export function applyChatEffect(pet: PetState, userMessage: string): ChatEffect 
         },
         pet.progress,
         pet.actionMemory,
+        pet,
       ),
     ),
     animation: "happy",

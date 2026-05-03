@@ -1,4 +1,5 @@
 import { isSupabaseServerConfigured } from "@/lib/supabase/server";
+import { isPetOutfit } from "@/lib/pet/pet-scenes";
 import type { PetActionResponse } from "@/lib/tamagotchi/api-types";
 import {
   applyPetAction,
@@ -22,6 +23,7 @@ export async function POST(request: Request) {
   const actionName =
     typeof body?.action === "string" ? body.action : "";
   const action = PET_ACTIONS.find((item) => item.name === actionName);
+  const outfit = isPetOutfit(body?.outfit) ? body.outfit : undefined;
   const clientPet = parsePetState(body?.clientPet) ?? initialPetState;
 
   if (!isValidGuestId(guestId)) {
@@ -34,7 +36,7 @@ export async function POST(request: Request) {
 
   if (!isSupabaseServerConfigured()) {
     return Response.json({
-      ...applyPetAction(clientPet, action.name),
+      ...applyPetAction(clientPet, action.name, Date.now(), { outfit }),
       storage: "local",
       notice: "Mileahchi sparar på den här enheten just nu.",
     } satisfies PetActionResponse);
@@ -42,7 +44,9 @@ export async function POST(request: Request) {
 
   try {
     const profile = await loadOrCreateGuestPet(guestId, clientPet);
-    const result = applyPetAction(profile.pet, action.name);
+    const result = applyPetAction(profile.pet, action.name, Date.now(), {
+      outfit,
+    });
 
     await updateGuestPet(profile.id, result.pet);
     await insertPetEvent(
@@ -51,7 +55,9 @@ export async function POST(request: Request) {
       result.statDelta,
       result.message,
       result.xpGained,
-    );
+    ).catch((eventError) => {
+      console.error("Failed to store Mileahchi pet event.", eventError);
+    });
 
     return Response.json({
       ...result,
@@ -61,7 +67,7 @@ export async function POST(request: Request) {
     console.error("Failed to save Mileahchi pet action.", error);
 
     return Response.json({
-      ...applyPetAction(clientPet, action.name),
+      ...applyPetAction(clientPet, action.name, Date.now(), { outfit }),
       storage: "local",
       notice: "Mileahchi sparar lokalt tills molnet vaknar igen.",
     } satisfies PetActionResponse);
@@ -73,6 +79,7 @@ async function readBody(request: Request) {
     | {
         guestId?: unknown;
         action?: unknown;
+        outfit?: unknown;
         clientPet?: unknown;
       }
     | null;

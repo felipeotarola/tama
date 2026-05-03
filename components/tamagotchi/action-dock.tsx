@@ -13,12 +13,14 @@ type ActionDockProps = {
 
 const actionStyles: Record<PetActionName, string> = {
   feed: "from-rose-50 to-red-100 text-rose-700 shadow-rose-200/60",
-  play: "from-violet-50 to-purple-100 text-violet-700 shadow-violet-200/60",
   sleep: "from-blue-50 to-indigo-100 text-blue-700 shadow-blue-200/60",
-  hug: "from-amber-50 to-orange-100 text-amber-800 shadow-amber-200/60",
+  school: "from-emerald-50 to-teal-100 text-emerald-700 shadow-emerald-200/60",
+  wardrobe: "from-amber-50 to-orange-100 text-amber-800 shadow-amber-200/60",
 };
 
 export function ActionDock({ pet, now, onAction }: ActionDockProps) {
+  const isBusy = !!pet.activity;
+
   return (
     <div className="relative z-10 grid grid-cols-4 gap-2.5">
       {PET_ACTIONS.map((action) => {
@@ -28,13 +30,14 @@ export function ActionDock({ pet, now, onAction }: ActionDockProps) {
           now,
         );
         const isCoolingDown = cooldownRemainingMs > 0;
+        const isDisabled = isBusy || isCoolingDown;
 
         return (
           <button
             key={action.name}
             type="button"
             onClick={() => onAction(action.name)}
-            disabled={isCoolingDown}
+            disabled={isDisabled}
             className={`relative flex aspect-square min-h-[72px] flex-col items-center justify-center rounded-full border border-white/80 bg-gradient-to-br p-1.5 text-center font-black shadow-lg transition duration-150 ease-out active:scale-95 disabled:scale-100 disabled:opacity-60 ${actionStyles[action.name]}`}
           >
             <span className="text-[2rem] leading-none" aria-hidden="true">
@@ -55,5 +58,16 @@ export function ActionDock({ pet, now, onAction }: ActionDockProps) {
 
 function formatCooldown(ms: number) {
   const seconds = Math.ceil(ms / 1000);
-  return seconds < 60 ? `${seconds}s` : `${Math.ceil(seconds / 60)}m`;
+
+  if (seconds < 60) {
+    return `${seconds}s`;
+  }
+
+  const minutes = Math.ceil(seconds / 60);
+
+  if (minutes < 60) {
+    return `${minutes}m`;
+  }
+
+  return `${Math.ceil(minutes / 60)}h`;
 }
